@@ -1,0 +1,50 @@
+{
+  "manifest": {
+    "publishingInformation": {
+      "locales": {
+        "en-IN": {
+          "name": "GestureControl",
+          "summary": "Control Alexa using hand gestures captured by a webcam.",
+          "description": "Gesture-Based Multimodal Control System for Smart Voice Assistants. MSRIT CSP67 project. Control smart home, music, and more using hand gestures.",
+          "examplePhrases": [
+            "Alexa, open gesture control",
+            "Alexa, ask gesture control to play music",
+            "Alexa, ask gesture control to turn on lights"
+          ],
+          "keywords": ["gesture", "computer vision", "smart home", "accessibility"]
+        },
+        "en-US": {
+          "name": "GestureControl",
+          "summary": "Control Alexa using hand gestures captured by a webcam.",
+          "description": "Gesture-Based Multimodal Control System. Control smart home, music, and more via hand gestures.",
+          "examplePhrases": [
+            "Alexa, open gesture control",
+            "Alexa, ask gesture control to play music"
+          ],
+          "keywords": ["gesture", "computer vision", "smart home"]
+        }
+      },
+      "isAvailableWorldwide": false,
+      "testingInstructions": "Use the Alexa Developer Console simulator or a physical Echo device linked to the developer account.",
+      "category": "SMART_HOME",
+      "distributionCountries": ["IN", "US"]
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "REPLACE_WITH_LAMBDA_ARN"
+        },
+        "interfaces": []
+      }
+    },
+    "manifestVersion": "1.0",
+    "permissions": [],
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "usesPersonalInfo": false,
+      "isChildDirected": false,
+      "isExportCompliant": true,
+      "containsAds": false
+    }
+  }
+}

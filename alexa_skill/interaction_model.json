@@ -1,0 +1,90 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "gesture control",
+      "intents": [
+        {
+          "name": "PlayMusicIntent",
+          "slots": [],
+          "samples": [
+            "play music",
+            "start playing music",
+            "play some music",
+            "begin music playback",
+            "start music"
+          ]
+        },
+        {
+          "name": "StopMusicIntent",
+          "slots": [],
+          "samples": [
+            "stop music",
+            "pause music",
+            "stop playing music",
+            "turn off music",
+            "halt music"
+          ]
+        },
+        {
+          "name": "TurnOnLightsIntent",
+          "slots": [],
+          "samples": [
+            "turn on the lights",
+            "lights on",
+            "switch on the lights",
+            "turn lights on",
+            "enable lights"
+          ]
+        },
+        {
+          "name": "TurnOffLightsIntent",
+          "slots": [],
+          "samples": [
+            "turn off the lights",
+            "lights off",
+            "switch off the lights",
+            "turn lights off",
+            "disable lights"
+          ]
+        },
+        {
+          "name": "WeatherIntent",
+          "slots": [],
+          "samples": [
+            "weather report",
+            "what is the weather",
+            "give me the weather",
+            "tell me the weather",
+            "get weather report",
+            "check the weather"
+          ]
+        },
+        {
+          "name": "EmergencyIntent",
+          "slots": [],
+          "samples": [
+            "emergency",
+            "send emergency alert",
+            "trigger emergency",
+            "emergency call",
+            "activate emergency",
+            "call for help"
+          ]
+        },
+        {
+          "name": "AMAZON.CancelIntent"
+        },
+        {
+          "name": "AMAZON.StopIntent"
+        },
+        {
+          "name": "AMAZON.FallbackIntent"
+        },
+        {
+          "name": "AMAZON.HelpIntent"
+        }
+      ],
+      "types": []
+    }
+  }
+}

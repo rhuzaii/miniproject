@@ -1,0 +1,14 @@
+venv/
+.env
+enrolled_faces/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.claude/
+lambda_package/
+gesture_alexa_lambda.zip
