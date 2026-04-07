@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gesture-Based Alexa Control System — Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f0f2f5;
+    padding: 40px 20px;
+    color: #1a1a2e;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: #1a1a2e;
+    letter-spacing: 0.5px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 36px;
+  }
+
+  .diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* LAYER ROWS */
+  .layer {
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  .layer-label {
+    width: 110px;
+    min-width: 110px;
+    text-align: right;
+    padding-right: 14px;
+    padding-top: 14px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #999;
+  }
+
+  .layer-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* BOXES */
+  .box {
+    border-radius: 10px;
+    padding: 12px 20px;
+    text-align: center;
+    min-width: 200px;
+    max-width: 320px;
+    position: relative;
+  }
+  .box .title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 3px;
+  }
+  .box .sub {
+    font-size: 11px;
+    opacity: 0.75;
+    line-height: 1.4;
+  }
+
+  /* BOX COLORS */
+  .box-input    { background: #d4edda; border: 2px solid #28a745; color: #155724; }
+  .box-vision   { background: #d1ecf1; border: 2px solid #17a2b8; color: #0c5460; }
+  .box-gesture  { background: #e2d9f3; border: 2px solid #6f42c1; color: #3d1a78; }
+  .box-auth     { background: #fff3cd; border: 2px solid #ffc107; color: #856404; }
+  .box-emergency{ background: #f8d7da; border: 2px solid #dc3545; color: #721c24; }
+  .box-api      { background: #fde8d0; border: 2px solid #fd7e14; color: #6d3300; }
+  .box-voicemonkey { background: #cce5ff; border: 2px solid #004085; color: #004085; }
+  .box-aws      { background: #e8f4f8; border: 2px solid #2196f3; color: #0d47a1; }
+  .box-alexa    { background: #e8d5f5; border: 2px solid #9c27b0; color: #4a0072; }
+  .box-echo     { background: #d4edda; border: 2px solid #00897b; color: #00352e; }
+  .box-output   { background: #f5f5f5; border: 2px solid #607d8b; color: #263238; }
+
+  /* ARROWS */
+  .arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 2px 0;
+  }
+  .arrow-line {
+    width: 2px;
+    height: 20px;
+    background: #aaa;
+  }
+  .arrow-head {
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid #aaa;
+  }
+  .arrow-label {
+    font-size: 10px;
+    color: #888;
+    margin-bottom: 2px;
+    font-style: italic;
+  }
+
+  /* SPLIT DELIVERY */
+  .split-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 30px;
+    width: 100%;
+    justify-content: center;
+    margin: 4px 0;
+  }
+  .split-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+  .split-col .path-label {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+  }
+  .primary-label { background: #004085; color: white; }
+  .secondary-label { background: #2196f3; color: white; }
+
+  .split-divider {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 6px 0;
+    gap: 20px;
+  }
+  .split-divider .line {
+    height: 2px;
+    flex: 1;
+    max-width: 150px;
+    background: #ccc;
+  }
+  .split-divider .split-text {
+    font-size: 11px;
+    color: #999;
+    white-space: nowrap;
+  }
+
+  /* SIDE BRANCH (Emergency) */
+  .main-with-side {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    width: 100%;
+    justify-content: center;
+  }
+  .main-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .side-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 30px;
+  }
+  .side-arrow {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 4px 0;
+  }
+  .side-arrow-line {
+    height: 2px;
+    width: 30px;
+    background: #dc3545;
+  }
+  .side-arrow-head {
+    width: 0;
+    height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 8px solid #dc3545;
+  }
+  .side-label {
+    font-size: 10px;
+    color: #dc3545;
+    font-style: italic;
+    margin-bottom: 2px;
+    text-align: center;
+  }
+
+  /* LEGEND */
+  .legend {
+    max-width: 1100px;
+    margin: 40px auto 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: #444;
+  }
+  .legend-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+  }
+
+  /* COMPONENT TABLE */
+  .table-section {
+    max-width: 1100px;
+    margin: 40px auto 0;
+  }
+  .table-section h2 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 14px;
+    color: #1a1a2e;
+    border-bottom: 2px solid #dee2e6;
+    padding-bottom: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  th {
+    background: #1a1a2e;
+    color: white;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .tag-code    { background: #e2d9f3; color: #3d1a78; }
+  .tag-infra   { background: #cce5ff; color: #004085; }
+  .tag-service { background: #d1ecf1; color: #0c5460; }
+  .tag-config  { background: #fff3cd; color: #856404; }
+</style>
+</head>
+<body>
+
+<h1>Gesture-Based Alexa Control System</h1>
+<p class="subtitle">MSRIT CSP67 — System Architecture Diagram</p>
+
+<div class="diagram">
+
+  <!-- INPUT LAYER -->
+  <div class="layer">
+    <div class="layer-label">Input</div>
+    <div class="layer-content">
+      <div class="box box-input">
+        <div class="title">User + Webcam</div>
+        <div class="sub">Performs hand gesture · OpenCV captures frames at 25fps</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- VISION LAYER -->
+  <div class="layer">
+    <div class="layer-label">Vision</div>
+    <div class="layer-content">
+      <div class="box box-vision">
+        <div class="title">CLAHE Preprocessing</div>
+        <div class="sub">LAB colorspace · L-channel equalisation · Low-light detection (threshold = 30)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <div class="layer">
+    <div class="layer-label"></div>
+    <div class="layer-content">
+      <div class="box box-vision">
+        <div class="title">MediaPipe Hands</div>
+        <div class="sub">21-point hand landmark detection · model_complexity=0 · Main thread only (M1 ARM64)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- GESTURE LAYER -->
+  <div class="layer">
+    <div class="layer-label">Gesture</div>
+    <div class="layer-content">
+      <div class="main-with-side">
+        <div class="main-col">
+          <div class="box box-gesture">
+            <div class="title">Rule-Based Gesture Classifier</div>
+            <div class="sub">
+              6 gestures · Landmark geometry rules<br>
+              Thumbs Up/Down · Open Palm · Fist · Peace · Three Fingers
+            </div>
+          </div>
+          <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+          <div class="box box-gesture">
+            <div class="title">Stability Buffer</div>
+            <div class="sub">10-frame sliding window · All frames must match · Prevents jitter &amp; false triggers</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- AUTH LAYER -->
+  <div class="layer">
+    <div class="layer-label">Auth</div>
+    <div class="layer-content">
+      <div class="main-with-side">
+        <div class="main-col">
+          <div class="box box-auth">
+            <div class="title">Face Authentication</div>
+            <div class="sub">
+              dlib 128-dim face encoding · Check every 10th frame<br>
+              5-vote batch · 3/5 majority · 25-frame cache · Tolerance 0.55
+            </div>
+          </div>
+        </div>
+        <div class="side-col">
+          <div class="side-label">THREE_FINGERS<br>held 75 frames</div>
+          <div class="side-arrow">
+            <div class="side-arrow-line"></div>
+            <div class="side-arrow-head"></div>
+          </div>
+          <div class="box box-emergency" style="min-width:160px; max-width:180px;">
+            <div class="title">Emergency System</div>
+            <div class="sub">Twilio SMS + Call · 30s cooldown · Bypasses face auth</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-label">Authorized + Stable Gesture</div>
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+  </div>
+
+  <!-- COMMAND MAPPING -->
+  <div class="layer">
+    <div class="layer-label">Mapping</div>
+    <div class="layer-content">
+      <div class="box box-gesture">
+        <div class="title">Command Mapper</div>
+        <div class="sub">Gesture → command string · play_music · stop_music · lights_on · lights_off · weather_report · emergency_call</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-label">HTTP POST /trigger-command</div>
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+  </div>
+
+  <!-- API LAYER -->
+  <div class="layer">
+    <div class="layer-label">Backend</div>
+    <div class="layer-content">
+      <div class="box box-api">
+        <div class="title">Flask REST API — Port 5001</div>
+        <div class="sub">Validates command · Dual delivery · Retry logic (2x, 0.5s delay)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SPLIT DELIVERY -->
+  <div class="split-divider">
+    <div class="line"></div>
+    <div class="split-text">Dual Delivery Path</div>
+    <div class="line"></div>
+  </div>
+
+  <div class="split-row">
+
+    <!-- PATH 1: Voice Monkey -->
+    <div class="split-col">
+      <span class="path-label primary-label">Path 1 — Gesture (Primary)</span>
+      <div class="box box-voicemonkey">
+        <div class="title">Voice Monkey API</div>
+        <div class="sub">Certified Alexa Skill · HTTP GET trigger · access_token + secret_token · monkey={flow}</div>
+      </div>
+      <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="box box-voicemonkey">
+        <div class="title">Routine Trigger Device</div>
+        <div class="sub">playmusic · stopmusic · lightson · lightsoff · weatherreport · emergencycall</div>
+      </div>
+      <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="box box-alexa">
+        <div class="title">Alexa Routine</div>
+        <div class="sub">Configured in Alexa app · One routine per command · Performs actual device action</div>
+      </div>
+    </div>
+
+    <!-- PATH 2: AWS Lambda -->
+    <div class="split-col">
+      <span class="path-label secondary-label">Path 2 — Voice + Audit (Secondary)</span>
+      <div class="box box-aws">
+        <div class="title">AWS API Gateway</div>
+        <div class="sub">REST endpoint · POST /command · Triggers Lambda</div>
+      </div>
+      <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="box box-aws">
+        <div class="title">AWS Lambda (ASK SDK)</div>
+        <div class="sub">Handles Alexa Skill intents · CloudWatch audit logs · Voice fallback: "Alexa, ask gesture control..."</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MERGE BACK -->
+  <div class="split-divider" style="margin-top:10px;">
+    <div class="line"></div>
+    <div class="split-text">Path 1 reaches Echo Dot</div>
+    <div class="line"></div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ECHO DOT -->
+  <div class="layer">
+    <div class="layer-label">Device</div>
+    <div class="layer-content">
+      <div class="box box-echo">
+        <div class="title">Amazon Echo Dot</div>
+        <div class="sub">Executes the action · No voice trigger needed</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- OUTPUT -->
+  <div class="layer">
+    <div class="layer-label">Output</div>
+    <div class="layer-content">
+      <div class="box box-output">
+        <div class="title">Action Executed</div>
+        <div class="sub">Plays music · Stops music · Controls lights · Fetches weather · Emergency alert</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#28a745"></div> Input / Output</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#17a2b8"></div> Computer Vision</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#6f42c1"></div> Gesture Processing</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffc107"></div> Face Authentication</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#dc3545"></div> Emergency System</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fd7e14"></div> Backend API</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#004085"></div> Voice Monkey (Primary)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2196f3"></div> AWS (Secondary)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#9c27b0"></div> Alexa</div>
+</div>
+
+<!-- COMPONENT TABLE -->
+<div class="table-section">
+  <h2>Component Breakdown</h2>
+  <table>
+    <tr>
+      <th>Component</th>
+      <th>Technology</th>
+      <th>Role</th>
+      <th>Type</th>
+    </tr>
+    <tr>
+      <td><strong>CLAHE Preprocessing</strong></td>
+      <td>OpenCV — LAB colorspace</td>
+      <td>Enhances frames in low-light conditions before landmark detection</td>
+      <td><span class="tag tag-code">Our Code</span></td>
+    </tr>
+    <tr>
+      <td><strong>Hand Landmark Detection</strong></td>
+      <td>MediaPipe Hands (21 points)</td>
+      <td>Detects hand position and joint coordinates in real time</td>
+      <td><span class="tag tag-code">Our Code</span></td>
+    </tr>
+    <tr>
+      <td><strong>Gesture Classifier</strong></td>
+      <td>Rule-based (landmark geometry)</td>
+      <td>Classifies 6 gestures from landmark Y-coordinate rules</td>
+      <td><span class="tag tag-code">Our Code</span></td>
+    </tr>
+    <tr>
+      <td><strong>Stability Buffer</strong></td>
+      <td>10-frame sliding window</td>
+      <td>Prevents false triggers — gesture must hold for 10 consecutive frames</td>
+      <td><span class="tag tag-code">Our Code</span></td>
+    </tr>
+    <tr>
+      <td><strong>Face Authentication</strong></td>
+      <td>dlib + face_recognition</td>
+      <td>Batch voting auth — 5 votes, 3/5 majority, 25-frame cache</td>
+      <td><span class="tag tag-code">Our Code</span></td>
+    </tr>
+    <tr>
+      <td><strong>Emergency System</strong></td>
+      <td>Twilio REST API</td>
+      <td>THREE_FINGERS held 3s → SMS + phone call to emergency contact</td>
+      <td><span class="tag tag-code">Our Code</span></td>
+    </tr>
+    <tr>
+      <td><strong>Flask REST API</strong></td>
+      <td>Flask 3.0 — Port 5001</td>
+      <td>Receives commands, validates, dispatches to both delivery paths</td>
+      <td><span class="tag tag-code">Our Code</span></td>
+    </tr>
+    <tr>
+      <td><strong>Voice Monkey</strong></td>
+      <td>voicemonkey.io HTTP API</td>
+      <td>Bridges gesture trigger to Echo Dot — certified Alexa skill with proactive access</td>
+      <td><span class="tag tag-service">Service</span></td>
+    </tr>
+    <tr>
+      <td><strong>Alexa Routines</strong></td>
+      <td>Alexa App configuration</td>
+      <td>Output actuator — performs actual actions (music, lights, weather)</td>
+      <td><span class="tag tag-config">Config</span></td>
+    </tr>
+    <tr>
+      <td><strong>AWS Lambda</strong></td>
+      <td>Python 3.11 + ASK SDK</td>
+      <td>Alexa Skill backend for voice invocation + CloudWatch audit logging</td>
+      <td><span class="tag tag-infra">Infrastructure</span></td>
+    </tr>
+    <tr>
+      <td><strong>AWS API Gateway</strong></td>
+      <td>REST API — /command</td>
+      <td>HTTP endpoint that triggers Lambda for the secondary path</td>
+      <td><span class="tag tag-infra">Infrastructure</span></td>
+    </tr>
+    <tr>
+      <td><strong>Amazon Echo Dot</strong></td>
+      <td>Alexa device</td>
+      <td>End output device — executes the action triggered by gesture</td>
+      <td><span class="tag tag-service">Device</span></td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>

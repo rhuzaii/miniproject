@@ -24,18 +24,39 @@ Show a hand gesture to the webcam → Echo Dot performs the action automatically
 
 ## How It Works
 
+The system has two complementary paths:
+
 ```
-Webcam → MediaPipe (hand detection) → Gesture Classifier
-       → Face Authentication → Flask API → Voice Monkey
-       → Alexa Routine → Echo Dot performs action
+GESTURE PATH (Control):
+Webcam → MediaPipe → Gesture Classifier → Face Auth
+       → Flask API → Voice Monkey → Alexa Routine → Echo Dot
+
+VOICE PATH (Monitor):
+"Alexa, ask gesture control..." → Lambda → DynamoDB → Alexa Skill response
 ```
 
 - **MediaPipe** detects 21 hand landmarks in real time
 - **Rule-based classifier** identifies 6 gestures from landmark geometry
 - **Face authentication** ensures only the enrolled owner triggers commands
-- **Flask REST API** receives commands and forwards to Echo Dot via Voice Monkey
-- **AWS Lambda** logs every command to CloudWatch as a secondary path
+- **Flask REST API** receives commands and dispatches to both paths
+- **Voice Monkey** proactively triggers Alexa Routines on Echo Dot — no wake word needed
+- **AWS Lambda + DynamoDB** logs every gesture command with timestamp for voice querying
 - **Emergency system** triggers Twilio SMS + call when three-finger gesture is held for 3 seconds
+
+---
+
+## Dual Architecture
+
+| Path | Purpose | How |
+|------|---------|-----|
+| Gesture → Voice Monkey → Echo Dot | **Control** — perform actions silently | Show a gesture |
+| Voice → Lambda → DynamoDB → Alexa | **Monitor** — query gesture history | Ask Alexa |
+
+**Voice query examples:**
+- *"Alexa, ask gesture control what was the last gesture"*
+  → *"The last gesture was Thumbs Up at 6:15 PM. It triggered the command to play music."*
+- *"Alexa, ask gesture control how many gestures today"*
+  → *"3 gestures detected today. Most recent was Peace Sign at 6:32 PM."*
 
 ---
 
@@ -44,20 +65,21 @@ Webcam → MediaPipe (hand detection) → Gesture Classifier
 ```
 miniproj/
 ├── main.py                    # Entry point — run this
-├── gesture_recognition.py     # MediaPipe + gesture classifier
+├── gesture_recognition.py     # MediaPipe + CLAHE + gesture classifier
 ├── command_mapper.py          # Gesture → command mapping
-├── face_auth.py               # Face enrollment + authentication
+├── face_auth.py               # Face enrollment + batch-voting authentication
 ├── emergency.py               # Emergency trigger + Twilio
 ├── enroll_face.py             # One-time face registration
 ├── backend/
-│   ├── app.py                 # Flask server
-│   └── routes.py              # POST /trigger-command
+│   ├── app.py                 # Flask server (port 5001)
+│   └── routes.py              # POST /trigger-command + dual delivery
 ├── alexa_skill/
-│   ├── lambda_function.py     # AWS Lambda handler
-│   └── interaction_model.json # Alexa skill intents
+│   ├── lambda_function.py     # AWS Lambda — DynamoDB logging + Alexa intents
+│   └── interaction_model.json # Alexa skill intents (8 total)
 ├── docs/
 │   ├── SETUP.md               # Full setup guide
-│   └── PROJECT_DOCUMENTATION.md # Technical documentation
+│   ├── PROJECT_DOCUMENTATION.md # Technical documentation
+│   └── architecture.html      # Visual architecture diagram
 ├── .env.template              # Copy to .env and fill credentials
 └── requirements.txt           # Python dependencies
 ```
@@ -99,14 +121,28 @@ python enroll_face.py
 ### 4. Run
 
 ```bash
-# Terminal 1
+# Terminal 1 — backend
 python backend/app.py
 
-# Terminal 2
+# Terminal 2 — gesture system
 python main.py
 ```
 
 Press **S** in the OpenCV window to start. Press **Q** to quit.
+
+---
+
+## AWS Setup Required
+
+| Service | Purpose |
+|---------|---------|
+| API Gateway | HTTP endpoint that triggers Lambda |
+| Lambda | Logs gesture commands to DynamoDB + handles Alexa Skill |
+| DynamoDB | Table `gesture_commands` — stores gesture history |
+
+Lambda requires **AmazonDynamoDBFullAccess** IAM policy attached to its execution role.
+
+See [`docs/SETUP.md`](docs/SETUP.md) for full AWS setup steps.
 
 ---
 
@@ -116,7 +152,7 @@ Press **S** in the OpenCV window to start. Press **Q** to quit.
 - Amazon Echo Dot (any generation)
 - Amazon Developer account (same as Echo Dot)
 - Voice Monkey account — voicemonkey.io
-- AWS account (API Gateway + Lambda)
+- AWS account (API Gateway + Lambda + DynamoDB)
 - Twilio account (for emergency alerts)
 - Webcam
 
@@ -126,9 +162,10 @@ Press **S** in the OpenCV window to start. Press **Q** to quit.
 
 - Full setup instructions → [`docs/SETUP.md`](docs/SETUP.md)
 - Technical documentation → [`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md)
+- Architecture diagram → [`docs/architecture.html`](docs/architecture.html)
 
 ---
 
 ## Tech Stack
 
-Python 3.11 · OpenCV · MediaPipe · face_recognition · Flask · AWS Lambda · Alexa Skills Kit · Voice Monkey · Twilio
+Python 3.11 · OpenCV · MediaPipe · face_recognition · Flask · AWS Lambda · DynamoDB · Alexa Skills Kit · Voice Monkey · Twilio

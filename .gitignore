@@ -11,4 +11,4 @@ build/
 .pytest_cache/
 .claude/
 lambda_package/
-gesture_alexa_lambda.zip
+*.zip

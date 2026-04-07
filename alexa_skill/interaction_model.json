@@ -72,6 +72,31 @@
           ]
         },
         {
+          "name": "GestureStatusIntent",
+          "slots": [],
+          "samples": [
+            "what was the last gesture",
+            "what gesture was last detected",
+            "show me the last command",
+            "what did I last do",
+            "last gesture",
+            "last command",
+            "what happened last"
+          ]
+        },
+        {
+          "name": "GestureCountIntent",
+          "slots": [],
+          "samples": [
+            "how many gestures today",
+            "how many commands today",
+            "total gestures today",
+            "how many times did I use gestures",
+            "gesture count",
+            "show today's gestures"
+          ]
+        },
+        {
           "name": "AMAZON.CancelIntent"
         },
         {
