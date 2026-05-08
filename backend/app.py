@@ -13,6 +13,7 @@ Port: 5001 (NOT 5000 — macOS Monterey+ uses 5000 for AirPlay Receiver)
 
 import sys
 import os
+sys.stdout.reconfigure(line_buffering=True)
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from flask import Flask

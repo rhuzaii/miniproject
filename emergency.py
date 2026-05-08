@@ -3,7 +3,8 @@ emergency.py
 Phase 4 — Three-finger hold detection + Twilio SMS & call trigger.
 
 Spec:
-  - THREE_FINGERS gesture held for >= 75 consecutive frames (~3s at 25fps) triggers emergency.
+  - THREE_FINGERS gesture held for >= EMERGENCY_HOLD_SECONDS real seconds (default 3.0)
+    triggers emergency. Time-based so fps variations don't affect hold duration.
   - Twilio sends SMS and makes a phone call to EMERGENCY_TO_NUMBER.
   - 30-second cooldown prevents re-triggering spam.
   - Countdown shown on OpenCV frame while holding.
@@ -16,19 +17,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-EMERGENCY_HOLD_FRAMES = int(os.getenv("EMERGENCY_HOLD_FRAMES", "75"))
+EMERGENCY_HOLD_SECONDS = float(os.getenv("EMERGENCY_HOLD_SECONDS", "3.0"))
 _COOLDOWN_SECONDS = 30
-_ASSUMED_FPS = 25  # used for display countdown only
 
 
 class EmergencySystem:
     """
-    Tracks THREE_FINGERS hold duration and fires Twilio on threshold.
+    Tracks THREE_FINGERS hold duration (wall-clock seconds) and fires Twilio on threshold.
     All methods must be called from the main thread.
     """
 
     def __init__(self):
-        self._hold_counter: int = 0
+        self._hold_start: float | None = None   # wall time when hold began
         self._triggered: bool = False
         self._last_trigger_time: float = 0.0
         self._show_triggered_until: float = 0.0  # wall time to show "EMERGENCY TRIGGERED"
@@ -49,13 +49,14 @@ class EmergencySystem:
         """
         Call every frame with the raw (unstabilized) gesture.
         Returns True the frame the emergency is triggered.
+        Uses wall-clock time so fps variations don't affect hold duration.
         """
         now = time.time()
 
         # Cooldown guard
         if self._triggered and (now - self._last_trigger_time) < _COOLDOWN_SECONDS:
             if gesture != "THREE_FINGERS":
-                self._hold_counter = 0
+                self._hold_start = None
             return False
 
         # Reset triggered flag after cooldown
@@ -63,18 +64,19 @@ class EmergencySystem:
             self._triggered = False
 
         if gesture == "THREE_FINGERS":
-            self._hold_counter += 1
+            if self._hold_start is None:
+                self._hold_start = now          # start the clock
+            held = now - self._hold_start
+            if held >= EMERGENCY_HOLD_SECONDS:
+                self._triggered = True
+                self._last_trigger_time = now
+                self._hold_start = None
+                self._show_triggered_until = now + 3.0
+                self._send_emergency()
+                return True
         else:
-            self._hold_counter = 0
+            self._hold_start = None
             return False
-
-        if self._hold_counter >= EMERGENCY_HOLD_FRAMES:
-            self._triggered = True
-            self._last_trigger_time = now
-            self._hold_counter = 0
-            self._show_triggered_until = now + 3.0
-            self._send_emergency()
-            return True
 
         return False
 
@@ -96,11 +98,11 @@ class EmergencySystem:
             return f"Emergency cooldown: {remaining:.0f}s", None
 
         # Counting down while holding
-        if self._hold_counter > 0:
-            seconds_held = self._hold_counter / _ASSUMED_FPS
-            seconds_remaining = (EMERGENCY_HOLD_FRAMES / _ASSUMED_FPS) - seconds_held
-            progress = self._hold_counter / EMERGENCY_HOLD_FRAMES
-            return f"Emergency in {seconds_remaining:.1f}s...", progress
+        if self._hold_start is not None:
+            held = now - self._hold_start
+            remaining = max(0.0, EMERGENCY_HOLD_SECONDS - held)
+            progress = min(1.0, held / EMERGENCY_HOLD_SECONDS)
+            return f"Emergency in {remaining:.1f}s...", progress
 
         return None, None
 

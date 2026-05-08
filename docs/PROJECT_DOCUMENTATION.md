@@ -18,12 +18,13 @@
 7. [Emergency System](#7-emergency-system)
 8. [Backend API](#8-backend-api)
 9. [Alexa Integration](#9-alexa-integration)
-10. [Data Flow — End to End](#10-data-flow--end-to-end)
-11. [Gesture-to-Command Mapping](#11-gesture-to-command-mapping)
-12. [Environment Configuration](#12-environment-configuration)
-13. [Setup & Running](#13-setup--running)
-14. [Design Decisions & Justifications](#14-design-decisions--justifications)
-15. [Known Limitations](#15-known-limitations)
+10. [DynamoDB Gesture Logging](#10-dynamodb-gesture-logging)
+11. [Data Flow — End to End](#11-data-flow--end-to-end)
+12. [Gesture-to-Command Mapping](#12-gesture-to-command-mapping)
+13. [Environment Configuration](#13-environment-configuration)
+14. [Setup & Running](#14-setup--running)
+15. [Design Decisions & Justifications](#15-design-decisions--justifications)
+16. [Known Limitations](#16-known-limitations)
 
 ---
 
@@ -115,7 +116,8 @@ The Lambda function logs every command to CloudWatch for audit purposes and prov
 | Face Recognition | face_recognition 1.3.0 (dlib) | Owner authentication |
 | Backend API | Flask 3.0.2 | REST API server |
 | HTTP | Requests 2.31.0 | Outbound API calls |
-| Cloud | AWS API Gateway + Lambda | Serverless command relay |
+| Cloud | AWS API Gateway + Lambda | Serverless command relay + gesture logging |
+| Database | AWS DynamoDB | Gesture command history — queryable by voice |
 | Alexa SDK | ASK SDK Core | Custom Alexa Skill |
 | Voice Delivery | Voice Monkey API | Proactive Echo Dot control |
 | Emergency | Twilio | SMS + phone call alerts |
@@ -352,22 +354,33 @@ Each entry maps to a Voice Monkey Routine Trigger device, which fires the corres
 
 ## 9. Alexa Integration
 
-### 9.1 Custom Alexa Skill (AWS Lambda)
+### 9.1 Dual-Path Architecture
+
+The system uses two complementary paths — neither is redundant:
+
+| Path | Role | Trigger |
+|------|------|---------|
+| Gesture → Voice Monkey → Echo Dot | **Control** — performs actions silently | Hand gesture |
+| Voice → Lambda → DynamoDB → Alexa Skill | **Monitor** — queries gesture history | Voice command |
+
+### 9.2 Custom Alexa Skill (AWS Lambda)
 
 Built using the **Alexa Skills Kit (ASK) SDK for Python**. Deployed on AWS Lambda.
 
 **Intents handled:**
 
-| Intent | Trigger phrase |
-|--------|---------------|
-| PlayMusicIntent | "play music" |
-| StopMusicIntent | "stop music" |
-| TurnOnLightsIntent | "turn on the lights" |
-| TurnOffLightsIntent | "turn off the lights" |
-| WeatherIntent | "weather report" |
-| EmergencyIntent | "emergency" |
+| Intent | Trigger phrase | Purpose |
+|--------|---------------|---------|
+| GestureStatusIntent | "what was the last gesture" | Reads DynamoDB — reports last gesture + time |
+| GestureCountIntent | "how many gestures today" | Reads DynamoDB — reports today's count |
+| PlayMusicIntent | "play music" | Voice fallback |
+| StopMusicIntent | "stop music" | Voice fallback |
+| TurnOnLightsIntent | "turn on the lights" | Voice fallback |
+| TurnOffLightsIntent | "turn off the lights" | Voice fallback |
+| WeatherIntent | "weather report" | Voice fallback |
+| EmergencyIntent | "emergency" | Voice fallback |
 
-**Invocation:** `"Alexa, ask gesture control to play music"`
+**Invocation:** `"Alexa, ask gesture control what was the last gesture"`
 
 ### 9.2 Voice Monkey Integration
 
@@ -407,7 +420,54 @@ One Alexa Routine per command, configured in the Alexa app:
 
 ---
 
-## 10. Data Flow — End to End
+## 10. DynamoDB Gesture Logging
+
+Every gesture command fired is logged to **AWS DynamoDB** (`gesture_commands` table) by the Lambda function.
+
+### 10.1 Table Schema
+
+| Field | Type | Example |
+|-------|------|---------|
+| `id` | String (UUID) | `"233bb479-cecf-42d6-..."` |
+| `command` | String | `"play_music"` |
+| `gesture` | String | `"Thumbs Up"` |
+| `action` | String | `"play music"` |
+| `timestamp` | ISO 8601 String | `"2026-04-07T13:32:11+00:00"` |
+| `date` | String | `"2026-04-07"` |
+| `time` | String | `"07:02 PM"` |
+
+### 10.2 How It Works
+
+```
+Gesture fires → Flask → AWS API Gateway → Lambda → DynamoDB.put_item()
+```
+
+Lambda routes between two invocation types:
+- **Alexa invocation** — `event["version"]` present → ASK SDK handler
+- **Flask invocation** — `event["body"]` present → log to DynamoDB
+
+### 10.3 Voice Queries (GestureStatusIntent)
+
+```
+"Alexa, ask gesture control what was the last gesture"
+→ Lambda scans DynamoDB → sorts by timestamp → reads latest item
+→ "The last gesture was Thumbs Up at 7:02 PM. It triggered the command to play music."
+
+"Alexa, ask gesture control how many gestures today"
+→ Lambda filters DynamoDB by today's date → counts items
+→ "3 gestures detected today. Most recent was Peace Sign at 7:15 PM."
+```
+
+### 10.4 Why DynamoDB Makes Lambda Useful
+
+Without DynamoDB, Lambda's only role was logging to CloudWatch — not queryable by voice. DynamoDB makes the voice path genuinely complementary to the gesture path:
+
+- **Gesture path** = control (input → action)
+- **Voice path** = monitoring (query → history)
+
+---
+
+## 11. Data Flow — End to End
 
 ```
 1. CAPTURE
@@ -436,8 +496,12 @@ One Alexa Routine per command, configured in the Alexa app:
    command string → HTTP POST → Flask /trigger-command
 
 8. DELIVER (Flask backend)
-   command → Voice Monkey API → Routine Trigger → Alexa Routine → Echo Dot
-   command → AWS API Gateway → Lambda → CloudWatch
+   Path 1: command → Voice Monkey API → Routine Trigger → Alexa Routine → Echo Dot
+   Path 2: command → AWS API Gateway → Lambda → DynamoDB (gesture log)
+
+8b. VOICE QUERY (independent, any time)
+   "Alexa, ask gesture control what was the last gesture"
+   → Lambda → DynamoDB scan → speech response → Echo Dot
 
 9. EMERGENCY (parallel, bypasses auth)
    THREE_FINGERS held 75 frames → Twilio SMS + Call → emergency contact

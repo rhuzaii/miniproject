@@ -17,6 +17,13 @@ import time
 import requests
 import os
 import sys
+import threading
+import queue
+sys.stdout.reconfigure(line_buffering=True)
+
+# Disable CoreML GPU delegate on M1 — prevents 5-15min first-run compilation hang
+os.environ.setdefault("MEDIAPIPE_DISABLE_GPU", "1")
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -29,7 +36,8 @@ from emergency import EmergencySystem
 # ── Config ─────────────────────────────────────────────────────────────────────
 FLASK_PORT = int(os.getenv("FLASK_PORT", "5001"))
 FLASK_URL = f"http://localhost:{FLASK_PORT}/trigger-command"
-COMMAND_COOLDOWN = 3.0   # seconds between consecutive command sends
+COMMAND_COOLDOWN = 2.0        # seconds before the SAME gesture can re-fire
+DIFFERENT_GESTURE_COOLDOWN = 0.8  # seconds before a DIFFERENT gesture can fire
 
 # ── UI Helpers ─────────────────────────────────────────────────────────────────
 
@@ -47,7 +55,7 @@ def _draw_progress_bar(frame, progress: float, y: int, color=(0, 165, 255)):
 def _send_command(command: str) -> bool:
     """POST the command to the local Flask backend. Returns True on success."""
     try:
-        resp = requests.post(FLASK_URL, json={"command": command}, timeout=5)
+        resp = requests.post(FLASK_URL, json={"command": command}, timeout=2)
         if resp.status_code == 200:
             data = resp.json()
             return data.get("status") == "success"
@@ -59,6 +67,25 @@ def _send_command(command: str) -> bool:
     except Exception as e:
         print(f"[Main] Request error: {e}")
         return False
+
+
+# Thread-safe queue for async command results
+_cmd_result_queue: queue.Queue = queue.Queue()
+
+
+def _send_command_async(command: str) -> None:
+    """
+    Dispatch _send_command in a daemon thread so the OpenCV UI loop never blocks.
+    Result arrives via _cmd_result_queue.
+    We intentionally do NOT gate on an in-flight flag — that caused gesture
+    transitions to block for the entire HTTP timeout (2s) before a new gesture
+    could fire. The cooldown + stability buffer already prevent double-triggers.
+    """
+    def _worker():
+        result = _send_command(command)
+        _cmd_result_queue.put((command, result))
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 # ── Main Loop ──────────────────────────────────────────────────────────────────
@@ -93,7 +120,8 @@ def main():
     frame_counter = 0
     last_stable_gesture = None
     last_command_time = 0.0
-    last_command_sent = ""
+    last_command_sent = ""      # last command string sent (e.g. "play_music")
+    last_sent_gesture = ""      # last gesture NAME that fired (e.g. "THUMBS_UP")
     command_status = ""         # feedback shown on screen
     command_status_until = 0.0
 
@@ -139,28 +167,57 @@ def main():
             stable_gesture = recognizer.classify_and_stabilize(results)
 
             # ── Face Auth (main thread, batch-voted) ────────────────────────
-            authorized, auth_status = face_auth.check(frame, frame_counter)
+            # Use raw_frame (pre-CLAHE) — enrollment was also captured raw.
+            # CLAHE alters pixel values enough to shift face encodings and cause mismatches.
+            authorized, auth_status = face_auth.check(raw_frame, frame_counter)
 
             # ── Command dispatch ────────────────────────────────────────────
             now = time.time()
+            elapsed = now - last_command_time
+            same_gesture = (stable_gesture == last_sent_gesture)
+
+            # THUMBS_UP after a fist gesture (CLOSED_FIST / THUMBS_DOWN) is almost
+            # always a release artifact — the hand naturally passes through thumbs-up
+            # when uncurling. Apply the full 2s cooldown for that specific transition.
+            _FIST_GESTURES = {"CLOSED_FIST", "THUMBS_DOWN"}
+            release_artifact = (
+                stable_gesture == "THUMBS_UP"
+                and last_sent_gesture in _FIST_GESTURES
+            )
+
+            if same_gesture or release_artifact:
+                required_cooldown = COMMAND_COOLDOWN          # 2.0s
+            else:
+                required_cooldown = DIFFERENT_GESTURE_COOLDOWN  # 0.8s
+
+            cooldown_ok = elapsed >= required_cooldown
             if (
                 stable_gesture
                 and stable_gesture != "THREE_FINGERS"       # emergency handled separately
-                and stable_gesture != last_stable_gesture   # new gesture
+                and stable_gesture != last_stable_gesture   # only fire on gesture change
                 and authorized
-                and (now - last_command_time) >= COMMAND_COOLDOWN
+                and cooldown_ok
             ):
                 command = get_command(stable_gesture)
                 if command:
                     print(f"[Main] Gesture: {stable_gesture} → Command: {command}")
-                    success = _send_command(command)
                     last_command_time = now
                     last_command_sent = command
-                    command_status = (
-                        f"Sent: {get_command_label(command)}" if success
-                        else "API Error — check backend"
-                    )
-                    command_status_until = now + 3.0
+                    last_sent_gesture = stable_gesture      # store gesture name, not command
+                    command_status = "Sending..."
+                    command_status_until = now + 6.0
+                    _send_command_async(command)  # non-blocking — UI stays smooth
+
+            # Poll for async command result
+            try:
+                cmd, success = _cmd_result_queue.get_nowait()
+                command_status = (
+                    f"Sent: {get_command_label(cmd)}" if success
+                    else "API Error — check backend"
+                )
+                command_status_until = time.time() + 3.0
+            except queue.Empty:
+                pass
 
             last_stable_gesture = stable_gesture
 
