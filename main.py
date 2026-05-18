@@ -38,7 +38,7 @@ FLASK_PORT = int(os.getenv("FLASK_PORT", "5001"))
 FLASK_URL = f"http://localhost:{FLASK_PORT}/trigger-command"
 COMMAND_COOLDOWN = 2.0        # seconds before the SAME gesture can re-fire
 DIFFERENT_GESTURE_COOLDOWN = 0.8  # seconds before a DIFFERENT gesture can fire
-OWNER_NAME = os.getenv("OWNER_NAME", "Owner")  # name logged to DynamoDB on auth success
+# Matched user name is returned directly by face_auth.check() — no env var needed.
 
 # ── UI Helpers ─────────────────────────────────────────────────────────────────
 
@@ -109,7 +109,10 @@ def main():
     print("[Main] MediaPipe ready.")
     print("[Main] Loading face auth...")
     face_auth = FaceAuthenticator()
-    print("[Main] Face auth ready.")
+    if face_auth.enrolled_users:
+        print(f"[Main] Face auth ready — enrolled: {', '.join(face_auth.enrolled_users)}")
+    else:
+        print("[Main] Face auth ready — no enrolled users (open access).")
     emergency = EmergencySystem()
     print("[Main] All modules loaded. Opening webcam...")
 
@@ -206,13 +209,14 @@ def main():
             ):
                 command = get_command(stable_gesture)
                 if command:
-                    print(f"[Main] Gesture: {stable_gesture} → Command: {command} (user: {OWNER_NAME})")
+                    # auth_status holds the matched name (e.g. "Rana") when authorized
+                    print(f"[Main] Gesture: {stable_gesture} → Command: {command} (user: {auth_status})")
                     last_command_time = now
                     last_command_sent = command
                     last_sent_gesture = stable_gesture      # store gesture name, not command
                     command_status = "Sending..."
                     command_status_until = now + 6.0
-                    _send_command_async(command, user=OWNER_NAME, auth_status="Authorized")  # non-blocking
+                    _send_command_async(command, user=auth_status, auth_status="Authorized")  # non-blocking
 
             # Poll for async command result
             try:
