@@ -12,3 +12,4 @@ build/
 .claude/
 lambda_package/
 *.zip
+hand_landmarker.task

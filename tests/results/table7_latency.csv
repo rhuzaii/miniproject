@@ -1,0 +1,6 @@
+Stage,Median (ms),P95 (ms),Trials
+Capture → MediaPipe,30.4,32.0,50
+MediaPipe → Classification,19.3,19.6,50
+Classification → Face Auth,0.0,0.0,50
+Auth → Flask POST,5.8,6.4,50
+Flask → Response (total),1725.9,2000.8,50

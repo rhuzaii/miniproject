@@ -1,0 +1,19 @@
+Gesture,Lighting,Correct,Incorrect,Accuracy (%)
+Thumbs Up,Bright,27,3,90.0
+Thumbs Down,Bright,21,9,70.0
+Open Palm,Bright,30,0,100.0
+Closed Fist,Bright,28,2,93.3
+Peace / V Sign,Bright,30,0,100.0
+Three Fingers,Bright,30,0,100.0
+Thumbs Up,Normal,27,3,90.0
+Thumbs Down,Normal,27,3,90.0
+Open Palm,Normal,30,0,100.0
+Closed Fist,Normal,29,1,96.7
+Peace / V Sign,Normal,30,0,100.0
+Three Fingers,Normal,30,0,100.0
+Thumbs Up,Low-Light,19,11,63.3
+Thumbs Down,Low-Light,29,1,96.7
+Open Palm,Low-Light,30,0,100.0
+Closed Fist,Low-Light,30,0,100.0
+Peace / V Sign,Low-Light,30,0,100.0
+Three Fingers,Low-Light,30,0,100.0

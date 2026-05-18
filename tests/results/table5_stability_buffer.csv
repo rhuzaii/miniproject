@@ -1,0 +1,5 @@
+Buffer Size (N),False Trigger Rate (%),Avg Confirmation Latency (ms)
+1,113.3,730.1
+5,73.3,772.9
+10,10.0,1173.2
+15,0.0,1340.6
