@@ -120,7 +120,11 @@ def trigger_command():
             "message": f"Invalid command '{command}'. Valid: {sorted(VALID_COMMANDS)}"
         }), 400
 
-    print(f"[Routes] Received command: {command}")
+    # Pull optional identity fields forwarded from main.py
+    user        = data.get("user", "Unknown")
+    auth_status = data.get("auth_status", "Authorized")
+
+    print(f"[Routes] Received command: {command}  user: {user}  auth: {auth_status}")
 
     # ── Path 1: Voice Monkey → Echo Dot speaks proactively ─────────────────────
     vm_ok = _trigger_voice_monkey(command)
@@ -137,7 +141,7 @@ def trigger_command():
             "response": {"simulated": True, "message": f"Would execute: {command}"},
         })
 
-    payload = {"command": command}
+    payload = {"command": command, "user": user, "auth_status": auth_status}
     last_error = ""
     for attempt in range(1, _MAX_RETRIES + 2):
         try:

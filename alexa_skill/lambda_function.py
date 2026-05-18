@@ -70,21 +70,23 @@ def _get_table():
     return dynamodb.Table(TABLE_NAME)
 
 
-def log_command(command: str):
-    """Write a gesture command entry to DynamoDB."""
+def log_command(command: str, user: str = "Unknown", auth_status: str = "Authorized"):
+    """Write a gesture command entry to DynamoDB, including who triggered it."""
     try:
         table = _get_table()
         now = datetime.now(timezone.utc)
         table.put_item(Item={
-            "id":        str(uuid.uuid4()),
-            "command":   command,
-            "gesture":   GESTURE_LABELS.get(command, command),
-            "action":    ACTION_LABELS.get(command, command),
-            "timestamp": now.isoformat(),
-            "date":      now.strftime("%Y-%m-%d"),
-            "time":      now.strftime("%I:%M %p"),
+            "id":          str(uuid.uuid4()),
+            "command":     command,
+            "gesture":     GESTURE_LABELS.get(command, command),
+            "action":      ACTION_LABELS.get(command, command),
+            "user":        user,
+            "auth_status": auth_status,
+            "timestamp":   now.isoformat(),
+            "date":        now.strftime("%Y-%m-%d"),
+            "time":        now.strftime("%I:%M %p"),
         })
-        logger.info(f"[DynamoDB] Logged: {command} at {now.isoformat()}")
+        logger.info(f"[DynamoDB] Logged: {command} by {user} ({auth_status}) at {now.isoformat()}")
     except Exception as e:
         logger.error(f"[DynamoDB] Failed to log command: {e}")
 
@@ -125,7 +127,7 @@ def get_today_commands():
 def _handle_direct_invocation(event):
     """
     Called when Flask POSTs to API Gateway → Lambda directly (not via Alexa).
-    Logs the command to DynamoDB and returns a 200 response.
+    Logs the command, user identity, and auth status to DynamoDB.
     """
     body = {}
     if event.get("body"):
@@ -134,13 +136,15 @@ def _handle_direct_invocation(event):
         except Exception:
             pass
 
-    command = body.get("command", "unknown")
-    log_command(command)
+    command     = body.get("command", "unknown")
+    user        = body.get("user", "Unknown")
+    auth_status = body.get("auth_status", "Authorized")
+    log_command(command, user=user, auth_status=auth_status)
 
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps({"status": "logged", "command": command}),
+        "body": json.dumps({"status": "logged", "command": command, "user": user}),
     }
 
 
@@ -174,8 +178,10 @@ class GestureStatusIntentHandler(AbstractRequestHandler):
         if not last:
             speech = "No gestures have been detected yet. Start the gesture system and try again."
         else:
+            user = last.get("user", "Unknown")
+            by_whom = f"by {user} " if user and user != "Unknown" else ""
             speech = (
-                f"The last gesture was {last['gesture']} at {last['time']}. "
+                f"The last gesture was {last['gesture']}, triggered {by_whom}at {last['time']}. "
                 f"It triggered the command to {last['action']}."
             )
         return handler_input.response_builder.speak(speech).response
@@ -192,12 +198,16 @@ class GestureCountIntentHandler(AbstractRequestHandler):
         if count == 0:
             speech = "No gestures have been detected today."
         elif count == 1:
-            speech = f"One gesture has been detected today. It was {items[0]['gesture']}."
+            user = items[0].get("user", "Unknown")
+            by_whom = f" by {user}" if user and user != "Unknown" else ""
+            speech = f"One gesture has been detected today{by_whom}. It was {items[0]['gesture']}."
         else:
             last = items[-1]
+            user = last.get("user", "Unknown")
+            by_whom = f" by {user}" if user and user != "Unknown" else ""
             speech = (
                 f"{count} gestures have been detected today. "
-                f"The most recent was {last['gesture']} at {last['time']}."
+                f"The most recent was {last['gesture']} at {last['time']}{by_whom}."
             )
         return handler_input.response_builder.speak(speech).response
 

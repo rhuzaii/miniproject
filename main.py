@@ -38,6 +38,7 @@ FLASK_PORT = int(os.getenv("FLASK_PORT", "5001"))
 FLASK_URL = f"http://localhost:{FLASK_PORT}/trigger-command"
 COMMAND_COOLDOWN = 2.0        # seconds before the SAME gesture can re-fire
 DIFFERENT_GESTURE_COOLDOWN = 0.8  # seconds before a DIFFERENT gesture can fire
+OWNER_NAME = os.getenv("OWNER_NAME", "Owner")  # name logged to DynamoDB on auth success
 
 # ── UI Helpers ─────────────────────────────────────────────────────────────────
 
@@ -52,10 +53,15 @@ def _draw_progress_bar(frame, progress: float, y: int, color=(0, 165, 255)):
     cv2.rectangle(frame, (10, y - 15), (w - 10, y), color, 1)
 
 
-def _send_command(command: str) -> bool:
+def _send_command(command: str, user: str = "Unknown", auth_status: str = "Authorized") -> bool:
     """POST the command to the local Flask backend. Returns True on success."""
     try:
-        resp = requests.post(FLASK_URL, json={"command": command}, timeout=2)
+        payload = {
+            "command":     command,
+            "user":        user,
+            "auth_status": auth_status,
+        }
+        resp = requests.post(FLASK_URL, json=payload, timeout=2)
         if resp.status_code == 200:
             data = resp.json()
             return data.get("status") == "success"
@@ -73,7 +79,7 @@ def _send_command(command: str) -> bool:
 _cmd_result_queue: queue.Queue = queue.Queue()
 
 
-def _send_command_async(command: str) -> None:
+def _send_command_async(command: str, user: str = "Unknown", auth_status: str = "Authorized") -> None:
     """
     Dispatch _send_command in a daemon thread so the OpenCV UI loop never blocks.
     Result arrives via _cmd_result_queue.
@@ -82,7 +88,7 @@ def _send_command_async(command: str) -> None:
     could fire. The cooldown + stability buffer already prevent double-triggers.
     """
     def _worker():
-        result = _send_command(command)
+        result = _send_command(command, user=user, auth_status=auth_status)
         _cmd_result_queue.put((command, result))
 
     threading.Thread(target=_worker, daemon=True).start()
@@ -200,13 +206,13 @@ def main():
             ):
                 command = get_command(stable_gesture)
                 if command:
-                    print(f"[Main] Gesture: {stable_gesture} → Command: {command}")
+                    print(f"[Main] Gesture: {stable_gesture} → Command: {command} (user: {OWNER_NAME})")
                     last_command_time = now
                     last_command_sent = command
                     last_sent_gesture = stable_gesture      # store gesture name, not command
                     command_status = "Sending..."
                     command_status_until = now + 6.0
-                    _send_command_async(command)  # non-blocking — UI stays smooth
+                    _send_command_async(command, user=OWNER_NAME, auth_status="Authorized")  # non-blocking
 
             # Poll for async command result
             try:
