@@ -248,3 +248,13 @@ class GestureBuffer:
             return most_common
 
         return None
+
+    def fill_ratio(self) -> float:
+        """Return how full the buffer is (0.0 – 1.0), for the UI progress bar."""
+        if self._stability == 0:
+            return 0.0
+        readings = [g for g in self._buffer if g is not None]
+        if not readings:
+            return len(self._buffer) / self._stability
+        most_common = max(set(readings), key=readings.count)
+        return min(1.0, readings.count(most_common) / self.VOTE_THRESHOLD)

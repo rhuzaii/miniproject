@@ -13,3 +13,6 @@ build/
 lambda_package/
 *.zip
 hand_landmarker.task
+
+# Docs / paper assets (large files — keep locally only)
+docs/

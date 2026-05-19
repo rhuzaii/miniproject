@@ -53,6 +53,36 @@ def _draw_progress_bar(frame, progress: float, y: int, color=(0, 165, 255)):
     cv2.rectangle(frame, (10, y - 15), (w - 10, y), color, 1)
 
 
+def _overlay_panel(frame, x, y, w, h, alpha=0.55):
+    """Draw a semi-transparent dark rounded panel."""
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x, y), (x + w, y + h), (20, 20, 20), -1)
+    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+    cv2.rectangle(frame, (x, y), (x + w, y + h), (80, 80, 80), 1)
+
+
+def _text_size(text, scale=0.65, thickness=1):
+    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+    return tw, th
+
+
+def _put_text_xy(frame, text, x, y, color=(255, 255, 255), scale=0.65, thickness=1):
+    cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness, cv2.LINE_AA)
+
+
+def _dot(frame, x, y, color, r=7):
+    cv2.circle(frame, (x, y), r, color, -1)
+
+
+def _mini_bar(frame, x, y, w, h, fill, color, bg=(60, 60, 60)):
+    """Tiny horizontal progress bar."""
+    cv2.rectangle(frame, (x, y), (x + w, y + h), bg, -1)
+    filled = int(w * min(1.0, max(0.0, fill)))
+    if filled > 0:
+        cv2.rectangle(frame, (x, y), (x + filled, y + h), color, -1)
+    cv2.rectangle(frame, (x, y), (x + w, y + h), (120, 120, 120), 1)
+
+
 def _send_command(command: str, user: str = "Unknown", auth_status: str = "Authorized") -> bool:
     """POST the command to the local Flask backend. Returns True on success."""
     try:
@@ -133,6 +163,11 @@ def main():
     last_sent_gesture = ""      # last gesture NAME that fired (e.g. "THUMBS_UP")
     command_status = ""         # feedback shown on screen
     command_status_until = 0.0
+
+    # FPS tracking
+    _fps_t0   = time.perf_counter()
+    _fps_count = 0
+    _fps_display = 0.0
 
     try:
         while True:
@@ -231,52 +266,114 @@ def main():
 
             last_stable_gesture = stable_gesture
 
+            # ── FPS calculation (updates every 30 frames) ───────────────────
+            _fps_count += 1
+            if _fps_count >= 30:
+                _t_now = time.perf_counter()
+                _fps_display = _fps_count / (_t_now - _fps_t0)
+                _fps_t0    = _t_now
+                _fps_count = 0
+
             # ── UI Overlay ──────────────────────────────────────────────────
-            h, w = frame.shape[:2]
-            y = 35
+            fh, fw = frame.shape[:2]
+            PAD = 10
 
-            # Low light warning
-            if low_light:
-                _put_text(frame, "WARNING: Low Light", y, color=(0, 165, 255)); y += 30
+            # ── LEFT PANEL: gesture / auth / buffer / cooldown / status ────
+            LP_W, LP_H = 318, 185
+            _overlay_panel(frame, PAD, PAD, LP_W, LP_H)
 
-            # Emergency overlay
-            if em_text:
-                color = (0, 0, 255) if "TRIGGERED" in em_text else (0, 165, 255)
-                _put_text(frame, em_text, y, color=color, scale=0.75, thickness=2)
-                if em_progress is not None:
-                    _draw_progress_bar(frame, em_progress, y + 10)
-                y += 40
+            lx, ly = PAD + 12, PAD + 24
 
-            # Gesture label
-            if stable_gesture:
-                _put_text(frame, f"Gesture: {get_display_label(stable_gesture)}", y, color=(0, 255, 100))
-            else:
-                _put_text(frame, "Gesture: --", y, color=(150, 150, 150))
-            y += 30
+            # Gesture row
+            g_label = get_display_label(stable_gesture) if stable_gesture else "--"
+            g_color = (0, 255, 120) if stable_gesture else (140, 140, 140)
+            _dot(frame, lx + 3, ly - 7, g_color, r=6)
+            _put_text_xy(frame, f"Gesture: {g_label}", lx + 18, ly,
+                         color=g_color, scale=0.63, thickness=1)
+            ly += 30
 
-            # Auth status
-            auth_color = (0, 255, 100) if authorized else (0, 0, 255)
-            _put_text(frame, f"Auth: {auth_status}", y, color=auth_color)
-            y += 30
+            # Auth row
+            auth_color = (0, 255, 120) if authorized else (0, 80, 255)
+            auth_icon  = "Auth" if authorized else "UNAUTH"
+            _dot(frame, lx + 3, ly - 7, auth_color, r=6)
+            _put_text_xy(frame, f"{auth_icon}: {auth_status}", lx + 18, ly,
+                         color=auth_color, scale=0.63, thickness=1)
+            ly += 30
 
-            # Unauthorized blocker
-            if not authorized and stable_gesture and stable_gesture != "THREE_FINGERS":
-                _put_text(frame, "UNAUTHORIZED — Command Blocked", y, color=(0, 0, 255), scale=0.65)
-                y += 28
+            # Stability buffer bar
+            buf_fill = recognizer.buffer.fill_ratio() if hasattr(recognizer.buffer, "fill_ratio") else 0.0
+            _put_text_xy(frame, "Buffer:", lx, ly, color=(180, 180, 180), scale=0.52)
+            _mini_bar(frame, lx + 64, ly - 13, 218, 14, buf_fill,
+                      color=(0, 200, 255) if buf_fill < 1.0 else (0, 255, 120))
+            _put_text_xy(frame, f"{int(buf_fill*100)}%", lx + 288, ly,
+                         color=(180, 180, 180), scale=0.46)
+            ly += 28
 
-            # Command status
+            # Cooldown bar
+            cooldown_elapsed = min(1.0, (now - last_command_time) / COMMAND_COOLDOWN)
+            cd_col = (0, 255, 120) if cooldown_elapsed >= 1.0 else (0, 165, 255)
+            _put_text_xy(frame, "Cooldown:", lx, ly, color=(180, 180, 180), scale=0.52)
+            _mini_bar(frame, lx + 78, ly - 13, 204, 14, cooldown_elapsed, color=cd_col)
+            _put_text_xy(frame, "OK" if cooldown_elapsed >= 1.0 else f"{(COMMAND_COOLDOWN*(1-cooldown_elapsed)):.1f}s",
+                         lx + 288, ly, color=cd_col, scale=0.46)
+            ly += 28
+
+            # Command / blocked status
             if now < command_status_until and command_status:
-                color = (0, 255, 100) if "Sent" in command_status else (0, 0, 255)
-                _put_text(frame, command_status, y, color=color)
-                y += 28
+                cs_col = (0, 255, 120) if "Sent" in command_status else (0, 100, 255)
+                _put_text_xy(frame, command_status, lx, ly, color=cs_col, scale=0.58, thickness=1)
+            elif not authorized and stable_gesture and stable_gesture != "THREE_FINGERS":
+                _put_text_xy(frame, "BLOCKED — not authorized", lx, ly,
+                             color=(0, 80, 255), scale=0.54, thickness=1)
 
-            # Last command sent (persistent footer)
+            # ── RIGHT PANEL: FPS / resolution / frame ───────────────────────
+            RP_W, RP_H = 218, 92
+            rx = fw - PAD - RP_W
+            _overlay_panel(frame, rx, PAD, RP_W, RP_H)
+
+            rpx, rpy = rx + 12, PAD + 24
+            fps_col = (0, 255, 120) if _fps_display >= 20 else (0, 165, 255) if _fps_display >= 12 else (0, 80, 255)
+            _put_text_xy(frame, f"FPS:   {_fps_display:5.1f}", rpx, rpy,
+                         color=fps_col, scale=0.66, thickness=1)
+            rpy += 26
+            _put_text_xy(frame, f"Res:   {fw} x {fh}", rpx, rpy,
+                         color=(170, 170, 170), scale=0.56, thickness=1)
+            rpy += 24
+            _put_text_xy(frame, f"Frame: {frame_counter:>6}", rpx, rpy,
+                         color=(130, 130, 130), scale=0.52, thickness=1)
+
+            # ── LOW LIGHT badge (top-centre) ─────────────────────────────────
+            if low_light:
+                ll_txt = " LOW LIGHT "
+                tw, _ = _text_size(ll_txt, scale=0.60)
+                lbx = fw // 2 - (tw + 16) // 2
+                _overlay_panel(frame, lbx, PAD, tw + 16, 30, alpha=0.75)
+                _put_text_xy(frame, ll_txt, lbx + 8, PAD + 22,
+                             color=(0, 165, 255), scale=0.60, thickness=1)
+
+            # ── EMERGENCY banner (full-width, below panels) ──────────────────
+            if em_text:
+                em_col = (0, 50, 230) if "TRIGGERED" in em_text else (0, 130, 255)
+                ban_y  = LP_H + PAD * 2 + 4
+                _overlay_panel(frame, PAD, ban_y, fw - PAD * 2, 50, alpha=0.75)
+                _put_text_xy(frame, em_text, PAD + 14, ban_y + 32,
+                             color=em_col, scale=0.72, thickness=2)
+                if em_progress is not None:
+                    _mini_bar(frame, PAD, ban_y + 46, fw - PAD * 2, 10,
+                              em_progress, color=em_col)
+
+            # ── BOTTOM BAR: last command + enrolled users ────────────────────
+            BB_H = 32
+            _overlay_panel(frame, 0, fh - BB_H, fw, BB_H, alpha=0.6)
             if last_command_sent:
-                _put_text(frame, f"Last: {get_command_label(last_command_sent)}", h - 20,
-                          color=(180, 180, 180), scale=0.55, thickness=1)
-
-            # FPS counter
-            _put_text(frame, f"Frame: {frame_counter}", w - 120, color=(100, 100, 100), scale=0.5, thickness=1)
+                _put_text_xy(frame, f"Last: {get_command_label(last_command_sent)}",
+                             PAD, fh - 10, color=(180, 180, 180), scale=0.52, thickness=1)
+            enrolled = face_auth.enrolled_users
+            if enrolled:
+                eu_txt = "Users: " + ", ".join(enrolled)
+                tw, _ = _text_size(eu_txt, scale=0.50)
+                _put_text_xy(frame, eu_txt, fw - tw - PAD, fh - 10,
+                             color=(110, 110, 110), scale=0.50, thickness=1)
 
             cv2.imshow("Gesture Alexa Control", frame)
             frame_counter += 1
